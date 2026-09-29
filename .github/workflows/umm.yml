@@ -1,4 +1,4 @@
-name: Tailscale SSH VM
+name: Tail
 
 on:
   workflow_dispatch:
