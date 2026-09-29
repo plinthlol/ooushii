@@ -26,8 +26,11 @@ WORKDIR /home/plinth
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/home/plinth/.cargo/bin:${PATH}"
 
-# Set fish prompt to arrow style
-RUN fish -c "fish_config prompt save arrow"
+# Set fish prompt to arrow style. "fish_config prompt save" needs an
+# interactive y/N confirmation that hangs/fails with no TTY at build time,
+# so instead we just make config.fish load the arrow prompt on every startup.
+RUN mkdir -p /home/plinth/.config/fish && \
+    echo 'fish_config prompt choose arrow >/dev/null' >> /home/plinth/.config/fish/config.fish
 
 # Create ~/dev and make it the default working dir
 RUN mkdir -p /home/plinth/dev
