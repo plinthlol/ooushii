@@ -9,13 +9,18 @@ if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
   docker build -t "$IMAGE_NAME" -f - . <<'EOF'
 FROM archlinux:latest
 
-# Base setup
+# Base setup — nushell, eza, and both JDKs are all in Arch's official repos
 RUN pacman -Syu --noconfirm && \
-    pacman -S --noconfirm base-devel git gcc fish sudo curl && \
+    pacman -S --noconfirm base-devel git gcc fish nushell eza sudo curl \
+        jdk21-openjdk jdk25-openjdk && \
     pacman -Scc --noconfirm
 
-# Create plinth user with passwordless sudo
-RUN useradd -m -G wheel -s /usr/bin/fish plinth && \
+# Default to Java 25 system-wide (archlinux-java ships with the jdk packages).
+# Switch anytime with: sudo archlinux-java set java-21-openjdk
+RUN archlinux-java set java-25-openjdk
+
+# Create plinth user with passwordless sudo, default shell = nushell
+RUN useradd -m -G wheel -s /usr/bin/nu plinth && \
     echo "plinth ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/plinth && \
     chmod 440 /etc/sudoers.d/plinth
 
@@ -26,24 +31,58 @@ WORKDIR /home/plinth
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/home/plinth/.cargo/bin:${PATH}"
 
-# Set fish prompt to arrow style. "fish_config prompt save" needs an
-# interactive y/N confirmation that hangs/fails with no TTY at build time,
-# so instead we just make config.fish load the arrow prompt on every startup.
+# Fish stays installed and available, arrow prompt set for when it's used.
+# "fish_config prompt save" needs an interactive y/N confirm that hangs with
+# no TTY at build time, so config.fish just loads the arrow prompt on startup.
 RUN mkdir -p /home/plinth/.config/fish && \
     echo 'fish_config prompt choose arrow >/dev/null' >> /home/plinth/.config/fish/config.fish
+
+# Nushell config: alias ls -> eza with icons/colors, and a Ctrl+Backspace
+# word-delete keybinding. Note: many terminals send the same byte (^H) for
+# both plain Backspace and Ctrl+Backspace, so there's a second binding on
+# char_h to catch that case too — whichever one your terminal actually sends
+# will work.
+RUN mkdir -p /home/plinth/.config/nushell /home/plinth/.local/bin && \
+    cat >> /home/plinth/.config/nushell/env.nu <<'NUENVEOF'
+
+$env.PATH = ($env.PATH | prepend $"($env.HOME)/.local/bin")
+$env.JAVA_HOME = "/usr/lib/jvm/default"
+NUENVEOF
+
+RUN cat >> /home/plinth/.config/nushell/config.nu <<'NUEOF'
+
+alias ls = eza --color=always --icons=always --group-directories-first
+
+$env.config.keybindings = ($env.config.keybindings | append [
+  {
+    name: delete_word_backward_backspace
+    modifier: control
+    keycode: backspace
+    mode: [emacs, vi_normal, vi_insert]
+    event: { edit: BackspaceWord }
+  }
+  {
+    name: delete_word_backward_char_h
+    modifier: control
+    keycode: char_h
+    mode: [emacs, vi_normal, vi_insert]
+    event: { edit: BackspaceWord }
+  }
+])
+NUEOF
 
 # Create ~/dev and make it the default working dir
 RUN mkdir -p /home/plinth/dev
 WORKDIR /home/plinth/dev
 
-CMD ["fish"]
+CMD ["nu"]
 EOF
 fi
 
 # Remove any existing container with the same name
 docker rm -f "$CONTAINER_NAME" &>/dev/null || true
 
-# Run it and drop straight into an interactive fish shell as plinth, inside ~/dev
+# Run it and drop straight into an interactive nushell shell as plinth, inside ~/dev
 docker run -it --name "$CONTAINER_NAME" \
   --hostname arch-plinth \
   -u plinth \
