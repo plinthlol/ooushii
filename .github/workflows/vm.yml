@@ -1,0 +1,58 @@
+name: Tailscale SSH VM
+
+on:
+  workflow_dispatch:
+
+jobs:
+  vm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p /home/runner/.ssh
+
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" \
+            > /home/runner/.ssh/authorized_keys
+
+          chmod 700 /home/runner/.ssh
+          chmod 600 /home/runner/.ssh/authorized_keys
+
+          sudo chown -R runner:runner /home/runner/.ssh
+
+      - name: Start SSH
+        run: |
+          sudo systemctl enable --now ssh
+
+      - name: Connect to Tailscale
+        run: |
+          sudo tailscale up \
+            --authkey="${{ secrets.TS_AUTHKEY }}" \
+            --hostname="github-runner-${{ github.run_id }}" \
+            --accept-dns=false
+
+      - name: Show Tailscale info
+        run: |
+          echo "======================================"
+          echo "TAILSCALE IP"
+          echo "======================================"
+          tailscale ip -4
+
+          echo "======================================"
+          echo "TAILSCALE STATUS"
+          echo "======================================"
+          tailscale status
+
+          echo "======================================"
+          echo "TAILSCALE NETCHECK"
+          echo "======================================"
+          tailscale netcheck
+
+      - name: Keep VM alive
+        run: |
+          sleep 21600
