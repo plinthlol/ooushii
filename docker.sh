@@ -29,7 +29,7 @@ WORKDIR /home/plinth
 
 # Install rustup + stable as plinth
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-ENV PATH="/home/plinth/.cargo/bin:${PATH}"
+ENV PATH="/home/plinth/.local/bin:/home/plinth/.cargo/bin:${PATH}"
 
 # Fish stays installed and available, arrow prompt set for when it's used.
 # "fish_config prompt save" needs an interactive y/N confirm that hangs with
@@ -71,6 +71,21 @@ $env.config.keybindings = ($env.config.keybindings | append [
 ])
 NUEOF
 
+# From here on, make piped installs (curl | sh) fail the build if curl fails
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Clone oshi, build it, and install it system-wide (make install needs root)
+RUN git clone https://github.com/plinthlol/oshi.git /home/plinth/oshi && \
+    cd /home/plinth/oshi && \
+    make && \
+    sudo make install
+
+# Grok Build
+RUN curl -fsSL https://x.ai/cli/install.sh | bash
+
+# dashe
+RUN curl -fsSL https://plinthlol.github.io/dashe/install.sh | sh
+
 # Create ~/dev and make it the default working dir
 RUN mkdir -p /home/plinth/dev
 WORKDIR /home/plinth/dev
@@ -88,4 +103,3 @@ docker run -it --name "$CONTAINER_NAME" \
   -u plinth \
   -w /home/plinth/dev \
   "$IMAGE_NAME"
-
