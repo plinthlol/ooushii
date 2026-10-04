@@ -4,14 +4,27 @@ set -e
 IMAGE_NAME="plinth-arch"
 CONTAINER_NAME="plinth-dev"
 
+# Optional flags:
+#   --reset    delete the container (you lose files inside it) and start fresh
+#   --rebuild  delete the container AND the image, then rebuild everything
+case "${1:-}" in
+  --reset)
+    docker rm -f "$CONTAINER_NAME" &>/dev/null || true
+    ;;
+  --rebuild)
+    docker rm -f "$CONTAINER_NAME" &>/dev/null || true
+    docker rmi -f "$IMAGE_NAME" &>/dev/null || true
+    ;;
+esac
+
 # Build the image if it doesn't exist yet
 if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
   docker build -t "$IMAGE_NAME" -f - . <<'EOF'
 FROM archlinux:latest
 
-# Base setup — nushell, eza, and both JDKs are all in Arch's official repos
+# Base setup — nushell, eza, github-cli, and both JDKs are all in Arch's official repos
 RUN pacman -Syu --noconfirm && \
-    pacman -S --noconfirm base-devel git gcc fish nushell eza sudo curl \
+    pacman -S --noconfirm base-devel git gcc fish nushell eza sudo curl github-cli \
         jdk21-openjdk jdk25-openjdk && \
     pacman -Scc --noconfirm
 
@@ -98,13 +111,15 @@ CMD ["fish"]
 EOF
 fi
 
-# Remove any existing container with the same name
-docker rm -f "$CONTAINER_NAME" &>/dev/null || true
-
-# Run it and drop straight into an interactive fish shell as plinth, inside ~/dev
-docker run -it --name "$CONTAINER_NAME" \
-  --hostname arch-plinth \
-  -u plinth \
-  -w /home/plinth/dev \
-  "$IMAGE_NAME"
-
+# If the container already exists, reattach to it so your files are still there.
+# Otherwise create it for the first time.
+if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+  echo "Resuming existing container '$CONTAINER_NAME' (use --reset for a fresh one)"
+  docker start -ai "$CONTAINER_NAME"
+else
+  docker run -it --name "$CONTAINER_NAME" \
+    --hostname arch-plinth \
+    -u plinth \
+    -w /home/plinth/dev \
+    "$IMAGE_NAME"
+fi
