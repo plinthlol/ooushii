@@ -13,6 +13,23 @@ jobs:
         run: |
           curl -fsSL https://tailscale.com/install.sh | sh
 
+      - name: Clone ooushii
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git clone "https://x-access-token:${GH_PAT}@github.com/plinthlol/ooushii.git" /home/runner/ooushii
+          # don't leave the token stored in the remote URL
+          git -C /home/runner/ooushii remote set-url origin https://github.com/plinthlol/ooushii.git
+
+      - name: Set up SSH login environment
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          {
+            echo "export GITHUB_TOKEN='${GH_PAT}'"
+            echo 'cd /home/runner/ooushii'
+          } >> /home/runner/.profile
+
       - name: Configure SSH key
         run: |
           mkdir -p /home/runner/.ssh

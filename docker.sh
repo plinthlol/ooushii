@@ -60,7 +60,6 @@ ENV PATH="/home/plinth/.local/bin:/home/plinth/.cargo/bin:${PATH}"
 #   - git uses gh as its credential helper, so clones/pushes use the token
 #   - git user.name/user.email are filled in from the GitHub API (noreply email),
 #     only if you haven't set them already
-#   - clones plinthlol/ooushii into ~/dev (once) and cd's into it
 RUN mkdir -p /home/plinth/.config/fish && \
     cat >> /home/plinth/.config/fish/config.fish <<'FISHEOF'
 fish_config prompt choose arrow >/dev/null
@@ -81,13 +80,6 @@ if status is-interactive; and set -q GITHUB_TOKEN
         end
     end
 
-    if not test -d $HOME/dev/ooushii
-        git clone https://github.com/plinthlol/ooushii $HOME/dev/ooushii
-    end
-end
-
-if test -d $HOME/dev/ooushii
-    cd $HOME/dev/ooushii
 end
 FISHEOF
 
