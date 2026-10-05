@@ -17,6 +17,12 @@ case "${1:-}" in
     ;;
 esac
 
+# GITHUB_TOKEN comes from the host environment (your secret). Without it gh/git
+# inside the container won't be authenticated, so warn loudly.
+if [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "WARNING: GITHUB_TOKEN is not set on the host; gh/git will be unauthenticated." >&2
+fi
+
 # Build the image if it doesn't exist yet
 if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
   docker build -t "$IMAGE_NAME" -f - . <<'EOF'
@@ -48,11 +54,41 @@ ENV PATH="/home/plinth/.local/bin:/home/plinth/.cargo/bin:${PATH}"
 # Fish config: arrow prompt, JAVA_HOME, and ls -> eza with icons/colors.
 # "fish_config prompt save" needs an interactive y/N confirm that hangs with
 # no TTY at build time, so config.fish just loads the arrow prompt on startup.
+#
+# GitHub bootstrap (runs on each interactive shell start, only if GITHUB_TOKEN is set):
+#   - gh already authenticates from the GITHUB_TOKEN env var
+#   - git uses gh as its credential helper, so clones/pushes use the token
+#   - git user.name/user.email are filled in from the GitHub API (noreply email),
+#     only if you haven't set them already
+#   - clones plinthlol/ooushii into ~/dev (once) and cd's into it
 RUN mkdir -p /home/plinth/.config/fish && \
     cat >> /home/plinth/.config/fish/config.fish <<'FISHEOF'
 fish_config prompt choose arrow >/dev/null
 set -gx JAVA_HOME /usr/lib/jvm/default
 alias ls 'eza --color=always --icons=always --group-directories-first'
+
+if status is-interactive; and set -q GITHUB_TOKEN
+    git config --global credential.https://github.com.helper '!gh auth git-credential'
+
+    if not git config --global user.email >/dev/null
+        set -l info (gh api user --jq '[.id, .login, (.name // .login)] | @tsv' 2>/dev/null)
+        if test -n "$info"
+            set -l parts (string split \t -- $info)
+            git config --global user.name "$parts[3]"
+            git config --global user.email "$parts[1]+$parts[2]@users.noreply.github.com"
+        else
+            echo "plinth: couldn't fetch GitHub user (bad token?); git identity not set"
+        end
+    end
+
+    if not test -d $HOME/dev/ooushii
+        git clone https://github.com/plinthlol/ooushii $HOME/dev/ooushii
+    end
+end
+
+if test -d $HOME/dev/ooushii
+    cd $HOME/dev/ooushii
+end
 FISHEOF
 
 # Nushell config (still installed, just not the default): alias ls -> eza with
@@ -113,13 +149,18 @@ fi
 
 # If the container already exists, reattach to it so your files are still there.
 # Otherwise create it for the first time.
+# NOTE: env vars are fixed when the container is created. If you rotate the
+# token, run with --reset so the new GITHUB_TOKEN gets picked up.
 if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
   echo "Resuming existing container '$CONTAINER_NAME' (use --reset for a fresh one)"
   docker start -ai "$CONTAINER_NAME"
 else
+  # `-e GITHUB_TOKEN` with no value forwards the host's value without putting
+  # the token on the command line.
   docker run -it --name "$CONTAINER_NAME" \
     --hostname arch-plinth \
     -u plinth \
     -w /home/plinth/dev \
+    -e GITHUB_TOKEN \
     "$IMAGE_NAME"
 fi
